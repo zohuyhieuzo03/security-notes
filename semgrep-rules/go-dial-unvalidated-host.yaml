@@ -1,0 +1,37 @@
+rules:
+  - id: go-dial-unvalidated-host
+    languages: [go]
+    severity: WARNING
+    message: >
+      This opens an outbound connection using a host/port taken from a
+      struct, without a validation/guard call (matching
+      guard|validate|allow|sanitize|checkhost|publiconly|denylist|blocklist)
+      appearing first in the same function. If a caller with a narrower,
+      legitimately-granted permission can influence this field (for example
+      "may edit this one managed resource" rather than full admin), the
+      server can be made to open a connection — and, if it reuses a stored
+      credential to authenticate, disclose that credential — to any address
+      the caller chooses. This also makes the connection function an
+      internal port-scanning oracle (loopback, LAN, cloud metadata) unless
+      the destination is range-checked.
+
+      Fix: validate the resolved destination IP (after DNS resolution, to
+      close DNS-rebinding) against a deny-list of loopback/private/
+      link-local/metadata ranges before dialing, every time the connection
+      target can change — not only on the resource's creation path.
+    metadata:
+      category: security
+      cwe:
+        - "CWE-918: Server-Side Request Forgery (SSRF)"
+        - "CWE-522: Insufficiently Protected Credentials"
+      references:
+        - https://cwe.mitre.org/data/definitions/918.html
+      confidence: MEDIUM
+    patterns:
+      - pattern: $CLIENT.Dial($CFG.$HOST, $CFG.$PORT, ...)
+      - pattern-not-inside: |
+          if $ERR := $GUARD(...); $ERR != nil {
+            ...
+          }
+          ...
+          $CLIENT.Dial($CFG.$HOST, $CFG.$PORT, ...)
